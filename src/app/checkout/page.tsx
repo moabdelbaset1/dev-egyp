@@ -196,7 +196,7 @@ export default function CheckoutPage() {
     console.log('\ud83d\udce6 Same as billing:', data.sameAsBilling);
     
     // Ensure user is authenticated (use .id property from auth.user)
-    const userId = auth.user?.id || auth.user?.$id;
+    const userId = auth.user?.id;
     if (!userId) {
       console.error('\u274c User not authenticated');
       toast.error('You must be logged in to place an order');
@@ -360,17 +360,23 @@ export default function CheckoutPage() {
           <Form {...form}>
             <form 
               onSubmit={(e) => {
-                console.log('\ud83d\udc49 Form submit event triggered');
-                console.log('\ud83d\udcdd Form errors:', form.formState.errors);
-                console.log('\u2705 Form is valid:', form.formState.isValid);
-                console.log('\ud83d\udce6 Form values:', form.getValues());
+                console.log('👉 Form submit event triggered');
+                console.log('📝 Form errors:', form.formState.errors);
+                console.log('✅ Form is valid:', form.formState.isValid);
+                console.log('📦 Form values:', form.getValues());
                 
                 // Show which fields are invalid
                 const errors = form.formState.errors;
                 if (Object.keys(errors).length > 0) {
-                  console.error('\u274c Invalid fields:', Object.keys(errors));
+                  console.error('❌ Invalid fields:', Object.keys(errors));
                   Object.entries(errors).forEach(([field, error]: [string, any]) => {
                     console.error(`  - ${field}:`, error?.message || error);
+                  });
+                  
+                  // Show user-friendly error message
+                  toast.error('Please fill in all required fields and accept the terms', {
+                    description: 'Check the form for validation errors highlighted in red',
+                    duration: 5000,
                   });
                 }
                 

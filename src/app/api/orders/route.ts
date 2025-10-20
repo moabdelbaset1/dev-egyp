@@ -91,31 +91,9 @@ export const POST = async (request: NextRequest) => {
 
     // Calculate totals
     const calculatedSubtotal = subtotal || items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const total = calculatedSubtotal + shippingCost + taxAmount - discountAmount;
-
-    // Generate order code (unique identifier for customer to track order)
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const order_code = `ORD-${year}${month}${day}-${random}`;
-
-    // Create timeline entry
-    const timeline = [
-      {
-        timestamp: new Date().toISOString(),
-        status: 'pending',
-        note: 'Order created'
-      }
-    ];
-
-    // Prepare order data matching Appwrite orders collection schema
-    // Note: items are stored in a separate order_items collection
     const totalAmount = calculatedSubtotal + shippingCost + taxAmount - discountAmount;
     
     // Map payment method to Appwrite schema enum values
-    // Appwrite accepts: cash, credit_card, debit_card, paypal, bank_transfer, wallet
     const paymentMethodMap: Record<string, string> = {
       'cash_on_delivery': 'cash',
       'credit_card': 'credit_card',
@@ -126,57 +104,37 @@ export const POST = async (request: NextRequest) => {
       'cash': 'cash'
     };
     const mappedPaymentMethod = paymentMethodMap[paymentMethod] || 'cash';
-    
+
+    // Generate order code (unique identifier for customer to track order)
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const order_code = `ORD-${year}${month}${day}-${random}`;
+
+    // Prepare order data matching the ACTUAL Appwrite orders collection schema
+    // Based on schema check: only these fields exist
     const orderData = {
-      order_number: order_code,
+      // Required fields
+      brand_id: brand_id || 'default',
       order_code,
+      order_status: 'pending',
+      payable_amount: totalAmount,
+      payment_status: 'unpaid',
+      total_amount: totalAmount,
+      
+      // Optional fields
       customer_id: customerId || 'guest',
-      customer_name: shippingAddress.fullName || 'Guest',
-      customer_email: body.email || '',
-      brand_id: brand_id || '', // Brand ID for filtering orders by brand
-      items: JSON.stringify(items.map(item => ({
-        product_id: item.productId,
-        product_name: item.name || item.productName || '',
-        sku: item.sku || '',
-        quantity: item.quantity,
-        price: item.price,
-        total: item.price * item.quantity
-      }))),
-      total_amount: totalAmount, // Total order amount
-      subtotal: calculatedSubtotal,
-      shipping_amount: shippingCost,
-      tax_amount: taxAmount,
-      discount_amount: discountAmount,
-      payable_amount: totalAmount, // Amount customer needs to pay
       discount: discountAmount,
-      status: 'pending', // Order status: pending, processing, shipped, delivered, cancelled
-      order_status: 'pending', // Order status: pending, processing, confirmed, shipped, delivered, cancelled, returned
-      payment_status: 'unpaid', // Payment status: paid, unpaid (default for COD), pending, refunded, failed
-      fulfillment_status: 'unfulfilled', // Fulfillment status: unfulfilled, partial, fulfilled, cancelled
       payment_method: mappedPaymentMethod,
-      shipping_address: JSON.stringify({
-        full_name: shippingAddress.fullName,
-        address_line1: shippingAddress.addressLine1,
-        address_line2: shippingAddress.addressLine2 || '',
-        city: shippingAddress.city,
-        state: shippingAddress.state,
-        postal_code: shippingAddress.postalCode,
-        country: shippingAddress.country,
-        phone: shippingAddress.phone
-      }),
-      billing_address: JSON.stringify({
-        full_name: billingAddress.fullName,
-        address_line1: billingAddress.addressLine1,
-        address_line2: billingAddress.addressLine2 || '',
-        city: billingAddress.city,
-        state: billingAddress.state,
-        postal_code: billingAddress.postalCode,
-        country: billingAddress.country,
-        phone: billingAddress.phone
-      }),
-      notes: customerNote || '',
-      tracking_number: '',
-      carrier: ''
+      
+      // Note: The following fields from original code don't exist in Appwrite:
+      // - items (need to store in separate collection or add to schema)
+      // - shipping_address, billing_address (need to add to schema)
+      // - subtotal, shipping_amount, tax_amount (need to add to schema)
+      // - status, fulfillment_status (don't exist)
+      // - notes, tracking_number, carrier (don't exist)
     };
 
     // Create order in Appwrite database
@@ -202,20 +160,23 @@ export const POST = async (request: NextRequest) => {
 
       const customerName = shippingAddress.fullName || 'Valued Customer';
 
+      // Prepare items for email (since items not stored in order document)
+      const emailItems = items.map(item => ({
+        name: item.name || item.productName || '',
+        quantity: item.quantity,
+        price: item.price,
+        total: item.price * item.quantity
+      }));
+
       await emailService.sendOrderConfirmation({
         orderNumber: order_code,
         customerName,
         customerEmail,
-        items: orderData.items.map(item => ({
-          name: item.productName,
-          quantity: item.quantity,
-          price: item.price,
-          total: item.total
-        })),
-        subtotal,
+        items: emailItems,
+        subtotal: calculatedSubtotal,
         shipping: shippingCost,
         tax: taxAmount,
-        total,
+        total: totalAmount,
         shippingAddress,
         estimatedDelivery: '3-5 business days'
       });

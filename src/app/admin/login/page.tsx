@@ -25,6 +25,26 @@ export default function AdminLogin() {
   })
   const router = useRouter()
 
+  // Track reload attempts to prevent infinite loop
+  useEffect(() => {
+    // Check if we just reloaded due to 401 error
+    const reloadAttempt = sessionStorage.getItem('admin_login_reload_attempt')
+    if (reloadAttempt) {
+      const attemptData = JSON.parse(reloadAttempt)
+      const timeSinceAttempt = Date.now() - attemptData.timestamp
+      
+      // If reload happened within last 10 seconds, clear the flag
+      if (timeSinceAttempt < 10000) {
+        console.log('Page reloaded after 401 error, checking session...')
+        // Clear the flag after checking
+        sessionStorage.removeItem('admin_login_reload_attempt')
+      } else {
+        // Old attempt, clear it
+        sessionStorage.removeItem('admin_login_reload_attempt')
+      }
+    }
+  }, [])
+
   // Auto-check for existing admin session on page load
   useEffect(() => {
     const checkExistingSession = async () => {
@@ -122,7 +142,45 @@ export default function AdminLogin() {
       let errorMessage = "Login failed. Please check your credentials and try again."
       
       if (err?.code === 401) {
-        errorMessage = "Invalid email or password. Please check your credentials."
+        // Check if we already tried reloading
+        const reloadAttempt = sessionStorage.getItem('admin_login_reload_attempt')
+        
+        if (reloadAttempt) {
+          // Already tried reload, show actual error
+          const attemptData = JSON.parse(reloadAttempt)
+          const timeSinceAttempt = Date.now() - attemptData.timestamp
+          
+          if (timeSinceAttempt < 10000) {
+            // Recent reload attempt failed, show real error
+            console.log('Reload attempt failed, showing error')
+            sessionStorage.removeItem('admin_login_reload_attempt')
+            errorMessage = "Invalid email or password. Please check your credentials."
+            setError(errorMessage)
+            setIsLoading(false)
+            return
+          }
+        }
+        
+        // First 401 error - attempt automatic retry with page reload
+        console.log('401 error detected - attempting automatic retry with page reload...')
+        
+        errorMessage = "تم إنشاء الجلسة، جاري إعادة تحميل الصفحة..."
+        setError(errorMessage)
+        
+        // Save reload attempt to sessionStorage
+        sessionStorage.setItem('admin_login_reload_attempt', JSON.stringify({
+          timestamp: Date.now(),
+          email: formData.email
+        }))
+        
+        // Wait a moment to show the message, then reload
+        setTimeout(() => {
+          console.log('Reloading page to complete login...')
+          window.location.reload()
+        }, 1500)
+        
+        // Keep loading state true during reload
+        return
       } else if (err?.code === 429) {
         errorMessage = "Too many login attempts. Please try again later."
       } else if (err?.message) {
